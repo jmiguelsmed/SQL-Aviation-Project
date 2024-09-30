@@ -1,0 +1,312 @@
+-- BD 2023/24 - etapa E2 - bd39
+-- 48069, Iolanda Leal, TP (25%)
+-- 58607, José Medeiros, TP14 (25%)
+-- 58611, Matilde Miguel, TP (25%)
+-- 57143, Rita Wang, TP14 (25%)
+-- -------------------------------------------------------------------------------------------
+
+-- ----------------------------------------- 1) ----------------------------------------------
+
+-- Nomes, cidades e países dos aeroportos de onde partiram voos plain em 2016,
+-- para aeroportos dos Estados Unidos (US) com nomes acabados em ‘y’, ordenados
+-- de forma crescente por país e cidade, e decrescente por nome. Nota: pretende-se
+-- uma interrogação com apenas um SELECT, ou seja, sem sub-interrogações.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT 
+	a1.nome,
+	a1.cidade,
+	a1.pais
+FROM 
+	aeroporto a1,     -- a1 é o aeroporto de origem
+	aeroporto a2,     -- a2 é o aeroporto de chegada
+	voo
+WHERE a1.sigla = voo.origem 		    
+AND a2.sigla = voo.destino 	           
+AND voo.tipo = 'P'  			    -- O voo é do tipo (P)lain.
+AND YEAR(voo.data) = 2016 		    -- Os voos têm de ocorrer no ano 2016.
+AND a2.nome LIKE '%y' 		    -- O nome do aeroporto de chegada acaba com 'y'.
+ORDER BY
+	a1.nome DESC,  
+	a1.cidade ASC,
+	a1.pais ASC
+;
+
+
+-- ------------------------------------------- 2) --------------------------------------------
+
+-- Nome, carta e país dos pilotos que foram comandantes em voos de pelo menos um dos 
+-- tipos: plain e charter, ou que tenham um nome com pelo menos 5 letras, terminado 
+-- por ‘o’, e tenham começado a sua actividade de piloto antes do ano de lançamento 
+-- do Boeing 777 (1995). Nota: pode usar construtores de conjuntos.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT DISTINCT 
+	pax.nome,
+	p.carta,
+	pax.pais
+FROM 
+	pessoa pax,
+	piloto p, 
+	voo v
+WHERE pax.nic = p.nic
+AND p.ano < 1995
+AND (
+	(p.nic = v.comandante 
+		AND (v.tipo = 'P' OR v.tipo = 'T'))
+	OR (LENGTH(pax.nome) >= 5 AND pax.nome LIKE '%o') 
+	-- Poderão ser nomes que tenham 5 caracteres e terminem em "o"
+	)
+;
+
+
+-- ------------------------------------------- 3) --------------------------------------------
+
+-- Nic, nome e país dos passageiros em voos charter de mais de 5 horas, que tiveram
+-- pelo menos um piloto (comandante ou co-piloto) de um país diferente do seu e com 
+-- afilhados de voo.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT DISTINCT 
+	pax.nic, 
+	pax.nome, 
+	pax.pais          -- mesmo passag aparece so 1 vez
+FROM 
+	pessoa pax,
+	viaja v,
+	voo
+WHERE pax.nic = v.pessoa
+AND voo.codigo = v.voo
+AND voo.tipo = 'T'          -- voo do tipo Char(T)er
+AND voo.duracao > 300          -- voos que duram mais de 5 horas
+AND pax.pais != ANY          -- pais do passag != pais de comandante
+   (SELECT
+		pax1.pais          -- ou do pais do co_piloto
+    FROM 
+		pessoa pax1,
+		piloto p1
+    WHERE pax1.nic = p1.nic
+	AND (p1.nic = voo.comandante OR          -- piloto é comandante ou co_piloto
+			p1.nic = voo.co_piloto)
+	AND EXISTS           -- piloto é padrinho de voo
+	   (SELECT *                         
+        FROM piloto p2
+        WHERE p1.nic = p2.padrinho))
+;
+
+
+-- ------------------------------------------- 4) --------------------------------------------
+
+-- Nome, país e ano de início de actividade dos pilotos que a iniciaram depois do 
+-- ano em que começaram os voos comerciais do avião supersónico Concorde (1976), e
+-- nunca foram comandantes de voos cargo de duração superior a 4 horas.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT 
+	pax.nome,
+	pax.pais,
+	p.ano    
+FROM
+	pessoa pax,
+	piloto p  
+WHERE p.nic = pax.nic		  -- pessoa que é piloto
+AND p.ano > 1976 		  -- pilotos que iniciaram a sua atividade depois de 1976
+AND p.nic NOT IN 		  -- que nunca foram
+   (SELECT voo.comandante      
+    FROM voo
+   	WHERE voo.tipo = 'C'      -- comandantes de voos (C)argo
+	AND voo.duracao > 240)  -- de durancao superior a 4 horas
+;
+
+-- -------------------------------------------- 5) -------------------------------------------
+
+-- Nic, nome e ano de início de actividade dos pilotos que tenham sido co-pilotos de
+-- todos os voos cargo comandados pelo seu padrinho de voo, oriundos do aeroporto
+-- da cidade do Pai Natal: Rovaniemi (Finlândia), com menos de 2 horas, no ano em
+-- que iniciaram a sua actividade. Nota: o resultado deve vir ordenado pelo ano e
+-- pelo nome de forma ascendente.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT DISTINCT 
+	p.nic, 
+	pax.nome, 
+	p.ano
+FROM 
+	pessoa pax, 
+	piloto p, 
+	voo
+WHERE p.nic = pax.nic
+AND voo.co_piloto = p.nic
+AND voo.comandante = p.padrinho
+AND voo.tipo = 'C'
+AND voo.duracao < 120
+AND YEAR(voo.data) = p.ano
+AND NOT EXISTS 
+	-- retira as situações em que o comandante não é padrinho do co_piloto
+   (SELECT 
+		voo2.co_piloto
+	FROM 
+		voo voo2
+    WHERE voo2.co_piloto != p.nic
+    AND voo2.comandante = p.padrinho
+    AND voo2.tipo = voo.tipo
+    AND voo2.duracao = voo.duracao
+	AND voo2.origem = voo.origem
+    AND YEAR(voo2.data) = p.ano
+    AND NOT EXISTS              
+	-- retira as situações em que não se verifica a cidade "Rovaniemi" e o pais "FI"
+	   (SELECT 
+			a.sigla
+        FROM 
+			aeroporto a
+		WHERE a.sigla = voo2.origem
+        AND a.cidade != 'Rovaniemi' 
+		AND a.pais != 'FI')
+        )
+ORDER BY 
+	p.ano, 
+	pax.nome
+;
+
+
+-- --------------------------------------------- 6) ------------------------------------------
+
+-- Número de voos que cada passageiro realizou (indicando nic e nome) em cada classe. 
+-- Nota: ordene o resultado pela classe de forma descendente e pelo nome do passageiro 
+-- de forma ascendente.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT
+	pax.nic,
+	pax.nome,
+	v.classe, 
+	COUNT(*) AS numero_de_voos     -- Número de voos em cada classe.
+FROM 
+	pessoa pax,
+	viaja v
+WHERE pax.nic = v.pessoa
+GROUP BY			       -- Agrupa o nome, nic e classe do passageiro em linha
+    pax.nic,       		       -- para contar o número de viagens em cada classe.      
+    pax.nome,		       -- O nome e o nic podem aparecer em mais do que uma linha
+    v.classe	               -- nos casos em que o passageiro viaja em diferentes classes.
+ORDER BY
+    v.classe DESC,
+    pax.nome ASC
+;
+
+
+-- --------------------------------------------- 7) ------------------------------------------
+
+-- Nome, carta e nacionalidade dos pilotos que foram comandantes em mais voos
+-- charter, com origem em cada um dos aeroportos. Nota: em caso de empate, devem
+-- ser mostrados todos os pilotos em causa.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT 
+	pax.nome,
+	p.carta,
+	pax.pais,
+	voo.origem
+FROM 
+	piloto p,
+	pessoa pax,
+	voo 
+WHERE pax.nic = p.nic
+AND p.nic = voo.comandante			-- piloto é comandante
+AND voo.tipo = 'T'				-- voo do tipo Char(T)er
+GROUP BY 
+	p.carta,
+	voo.origem			-- agrupa para cada aeroporto e origem aero
+HAVING COUNT(*) >=  ALL				-- piloto com mais voos em cada origem 
+   (SELECT COUNT(*)
+    FROM 
+		piloto p2,
+		voo voo2
+    WHERE p2.nic = voo2.comandante
+    AND voo.origem = voo2.origem	-- piloto que voaram da mesma origem
+    AND voo2.tipo = 'T'               -- voo do tipo Char(T)er
+    GROUP BY 
+		p2.carta,
+		voo2.origem
+	)
+;
+	
+	
+-- ---------------------------------------------- 8) -----------------------------------------
+
+-- Para cada país, o nic, nome e género da pessoa natural desse país que realizou
+-- mais voos charter, indicando o número de voos, e a maior e menor duração dos
+-- voos realizados. Nota: devem ser mostrados todos os passageiros que empatarem
+-- neste total de voos.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT
+    pax.nic,
+    pax.nome,
+    pax.pais,
+    COUNT(voo.codigo) AS numero_de_voos,
+    MAX(voo.duracao) AS duracao_maxima_voo,
+    MIN(voo.duracao) AS duracao_minima_voo
+FROM
+	pessoa pax,
+	viaja v,
+	voo
+WHERE
+    pax.nic = v.pessoa
+    AND v.voo = voo.codigo
+    AND voo.tipo = 'T' -- Selecciona os voos que sejam do tipo CHARTER
+GROUP BY
+    pax.nic,
+	pax.nome,
+	pax.pais
+HAVING
+    COUNT(voo.codigo) >= ALL ( -- Pessoa com o maior número de voos para cada pais
+        SELECT
+            COUNT(voo2.codigo)
+        FROM
+            pessoa pax2,
+			viaja v2,
+			voo voo2
+        WHERE
+            pax2.nic = v2.pessoa
+            AND pax2.pais = pax.pais
+            AND v2.voo = voo2.codigo
+            AND voo2.tipo = 'T'
+        GROUP BY
+            pax2.nic,
+			pax2.nome,
+			pax2.pais
+    );
+
+
+-- ---------------------------------------- 9) -----------------------------------------------
+
+-- Nome, nacionalidade e ano de nascimento das pessoas dos países bálticos: Estónia
+-- (EE), Letónia (LV) e Lituânia (LT), que já eram nascidas no ano de inauguração do 
+-- aeroporto de Bratislava na Eslováquia (1951), e efectuaram menos de 4 voos, mesmo 
+-- que não tenham efectuado nenhum. Pretende-se uma interrogação sem sub-interrogações: 
+-- apenas com um SELECT.
+
+-- -------------------------------------------------------------------------------------------
+
+SELECT 
+	pax.nome,
+	pax.pais,
+	pax.ano
+FROM 
+	pessoa pax
+LEFT OUTER JOIN viaja v		-- pessoas que nunca viajaram e que viajaram
+    ON (pax.nic = v.pessoa)    
+WHERE pax.pais IN ('EE','LT','LV')     -- pessoas de nacionalidade Estónia(EE), Letónia (LV) e Lituânia (LT)
+AND pax.ano < '1951'			-- pessoas nascidas antes de 1951
+GROUP BY (pax.nic)  		-- Agrupa por cada pessoa
+HAVING COUNT(*) < 4		--  pessoas que realizaram menos de 4 voos                        
+;
